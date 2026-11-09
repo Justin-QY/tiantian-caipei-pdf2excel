@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 打包产物
+build/
+dist/
+*.spec
+
+# 可执行文件（走 Releases 分发，不进仓库）
+*.exe
+
+# 测试与临时产物
+sample.pdf
+out_*/
+.pdf2xlsx_tmp/
+*.log
+
+# 编辑器
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
