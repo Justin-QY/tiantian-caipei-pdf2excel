@@ -19,7 +19,7 @@ import datetime
 import webview
 
 APP_NAME = "天天采配清单-PDF转Excel"
-APP_VER = "v1.5"
+APP_VER = "v1.6"
 
 
 def res_path(rel):

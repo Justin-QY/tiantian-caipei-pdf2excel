@@ -77,10 +77,16 @@
     background: rgba(255,255,255,.6);
     border: 1px solid rgba(255,255,255,.9);
     font-size: 11.5px; color: var(--ink-2);
+    transition: background .25s, border-color .25s, color .25s;
   }
+  /* 右上角服务三态：就绪=绿（正常）/ 进行=黄（处理中）/ 异常=红（无法处理） */
+  .status-pill[data-state="ready"] { background: rgba(22,163,123,.12); border-color: rgba(22,163,123,.28); color: #0d8263; }
+  .status-pill[data-state="busy"]  { background: rgba(227,160,8,.15);  border-color: rgba(227,160,8,.34);  color: #946500; }
+  .status-pill[data-state="error"] { background: rgba(217,86,79,.12);  border-color: rgba(217,86,79,.28);  color: #c03d36; }
   .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); transition: background .3s; }
-  .dot.busy { background: var(--accent); animation: pulse 1.1s ease-in-out infinite; }
-  .dot.done { background: var(--ok); }
+  .dot.ready { background: #16a37b; }
+  .dot.busy  { background: #e3a008; animation: pulse 1.1s ease-in-out infinite; }
+  .dot.error { background: #d9564f; }
   @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.35;transform:scale(.75)} }
 
   .win-btns { display: flex; gap: 1px; }
@@ -290,6 +296,61 @@
     opacity: 0; visibility: hidden; transition: all .24s; z-index: 9;
   }
   .toast.show { opacity: 1; visibility: visible; transform: translate(-50%, 0); }
+
+  /* 开始转换前的确认弹框 */
+  .modal-mask {
+    position: absolute; inset: 0; z-index: 20;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(27,34,48,.26);
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    opacity: 0; visibility: hidden; transition: opacity .18s, visibility .18s;
+  }
+  .modal-mask.show { opacity: 1; visibility: visible; }
+  .modal {
+    width: min(370px, calc(100% - 40px));
+    background: rgba(255,255,255,.94);
+    border: 1px solid rgba(255,255,255,.96);
+    border-radius: 16px;
+    box-shadow: 0 22px 60px rgba(26,38,66,.24);
+    padding: 20px 20px 18px;
+    transform: translateY(10px) scale(.98);
+    transition: transform .2s cubic-bezier(.2,.8,.3,1);
+  }
+  .modal-mask.show .modal { transform: none; }
+  .modal-icon {
+    width: 38px; height: 38px; border-radius: 12px;
+    background: var(--accent-soft); color: var(--accent);
+    display: grid; place-items: center; margin-bottom: 12px;
+  }
+  .modal-icon svg { width: 19px; height: 19px; }
+  .modal h3 { font-size: 14.5px; font-weight: 600; margin-bottom: 6px; }
+  .modal p { font-size: 12px; color: var(--ink-2); line-height: 1.7; }
+  .modal .summary {
+    margin-top: 12px; padding: 9px 11px; border-radius: 10px;
+    background: rgba(59,108,246,.06); border: 1px solid rgba(59,108,246,.12);
+    font-size: 11.5px; color: var(--ink-2); line-height: 1.8;
+    word-break: break-all;
+  }
+  .modal .summary b { color: var(--accent); font-weight: 600; }
+  .modal-ft { display: flex; gap: 9px; margin-top: 18px; }
+  .modal-ft .btn { flex: 1; height: 34px; font-size: 12.5px; }
+  /* 两个按钮用明显不同的颜色区分功能：绿色=执行，浅灰=放弃 */
+  .btn-go {
+    background: linear-gradient(180deg, #23b98b, #16a37b);
+    background-color: #16a37b;
+    border-color: transparent; color: #fff;
+    box-shadow: 0 5px 16px rgba(22,163,123,.28);
+  }
+  .btn-go:hover:not(:disabled) {
+    background: linear-gradient(180deg, #2cc697, #18ac81);
+    background-color: #18ac81;
+    color: #fff; box-shadow: 0 6px 18px rgba(22,163,123,.34);
+  }
+  .btn-cancel {
+    background: rgba(255,255,255,.85); color: var(--ink-2);
+    border-color: rgba(27,34,48,.12);
+  }
+  .btn-cancel:hover:not(:disabled) { background: #fff; color: var(--ink); box-shadow: 0 4px 14px rgba(26,38,66,.08); }
 </style>
 </head>
 <body>
@@ -305,10 +366,10 @@
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>
         </svg>
       </div>
-      <b>天天采配清单-PDF转Excel</b><span>v1.5</span>
+      <b>天天采配清单-PDF转Excel</b><span>v1.6</span>
     </div>
     <div class="spacer"></div>
-    <div class="status-pill"><i class="dot" id="dot"></i><span id="statusText">就绪</span></div>
+    <div class="status-pill" id="statusPill" data-state="ready" title="解析引擎运行正常"><i class="dot ready" id="dot"></i><span id="statusText">就绪</span></div>
     <div class="win-btns">
       <i id="btnMin" title="最小化">—</i>
       <i id="btnMax" title="最大化">▢</i>
@@ -393,6 +454,23 @@
   </div>
 
   <div class="toast" id="toast"></div>
+
+  <div class="modal-mask" id="confirmMask" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+    <div class="modal">
+      <div class="modal-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="m9 15 2 2 4-4"/>
+        </svg>
+      </div>
+      <h3 id="confirmTitle">是否开始执行转换文件？</h3>
+      <p>点击「开始」后将立即处理已勾选的文件，转换过程中请勿关闭窗口。</p>
+      <div class="summary" id="confirmSummary"></div>
+      <div class="modal-ft">
+        <button class="btn btn-go" id="confirmGo">开始</button>
+        <button class="btn btn-cancel" id="confirmCancel">取消</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -421,9 +499,25 @@
     t.textContent = msg; t.classList.add('show');
     clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('show'), 2400);
   }
-  function setStatus(text, cls) {
-    $('#statusText').textContent = text;
-    $('#dot').className = 'dot' + (cls ? ' ' + cls : '');
+  // 右上角只表示「服务状态」，固定三态：
+  //   就绪=绿（解析引擎正常）/ 进行=黄（处理中）/ 异常=红（无法处理）
+  // 转换结果、进度、明细仍由进度条和处理日志负责。
+  const STATUS = {
+    ready: { text: '就绪', tip: '解析引擎运行正常' },
+    busy:  { text: '进行', tip: '服务处理中' },
+    error: { text: '异常', tip: '无法处理，请查看处理日志' }
+  };
+  let engineOk = false;   // pywebviewready 触发后才算引擎正常
+  function setStatus(state, detail) {
+    const s = STATUS[state] ? state : 'ready';
+    $('#statusText').textContent = STATUS[s].text;
+    $('#statusPill').dataset.state = s;
+    $('#statusPill').title = detail || STATUS[s].tip;
+    $('#dot').className = 'dot ' + s;
+  }
+  function setReady() {   // 回到空闲态：引擎没起来就保持红色异常
+    if (engineOk) setStatus('ready');
+    else setStatus('error', '解析引擎未就绪，无法处理');
   }
   function setProgress(v, text) {
     $('#bar').style.width = v + '%';
@@ -439,8 +533,9 @@
   function updateStartState() {
     const n = checkedCount();
     $('#fileHint').textContent = files.length ? ('已勾选 ' + n + ' / ' + files.length) : '未选择';
-    $('#btnStart').disabled = busy || n === 0;
-    $('#btnStart').title = n === 0 ? '请先勾选要转换的文件' : '';
+    $('#btnStart').disabled = busy || n === 0 || !engineOk;
+    $('#btnStart').title = !engineOk ? '解析引擎未就绪，请稍候或重启程序'
+                          : (n === 0 ? '请先勾选要转换的文件' : '');
   }
 
   function render() {
@@ -488,7 +583,7 @@
     });
     render();
     if (added) {
-      setStatus('待处理');
+      setReady();
       log('已添加 ' + added + ' 个文件（默认勾选），当前共 ' + files.length + ' 个', 'info');
     }
   }
@@ -519,7 +614,7 @@
 
   $('#btnClear').onclick = () => {
     if (busy) return;
-    files = []; render(); setStatus('就绪');
+    files = []; render(); setReady();
     setProgress(0, '等待开始');
     log('已清空文件列表', 'dim');
   };
@@ -555,6 +650,42 @@
     else log('已打开导出目录：' + d, 'dim');
   };
 
+  // 自定义确认弹框（不用原生 confirm：按钮文字和颜色都要可控）
+  let confirmOpen = false;
+  function confirmStart() {
+    return new Promise(resolve => {
+      if (confirmOpen) { resolve(false); return; }
+      confirmOpen = true;
+      $('#confirmSummary').innerHTML =
+        '已勾选 <b>' + checkedCount() + '</b> 个 PDF · 输出：<b>' +
+        (layout === 'single' ? '单工作表' : '多工作表') + '</b><br>' +
+        '文件名：<b>' + esc($('#outName').value.trim() || '沿用原文件名') + '</b><br>' +
+        '导出目录：<b>' + esc($('#outDir').value.trim()) + '</b>';
+      const mask = $('#confirmMask');
+      mask.classList.add('show');
+      $('#confirmGo').focus();
+
+      function close(ok) {
+        if (!confirmOpen) return;
+        confirmOpen = false;
+        mask.classList.remove('show');
+        $('#confirmGo').onclick = null;
+        $('#confirmCancel').onclick = null;
+        mask.onclick = null;
+        document.removeEventListener('keydown', onKey);
+        resolve(ok);
+      }
+      function onKey(e) {
+        if (e.key === 'Escape') { e.preventDefault(); close(false); }
+        else if (e.key === 'Enter') { e.preventDefault(); close(true); }
+      }
+      $('#confirmGo').onclick = () => close(true);
+      $('#confirmCancel').onclick = () => close(false);
+      mask.onclick = e => { if (e.target === mask) close(false); };
+      document.addEventListener('keydown', onKey);
+    });
+  }
+
   $('#btnStart').onclick = async () => {
     if (busy) return;
     if (!files.length) { toast('请先导入 PDF 文件'); log('没有待处理文件', 'err'); return; }
@@ -563,13 +694,17 @@
     const out = $('#outDir').value.trim();
     if (!out) { toast('请先选择导出目录'); log('无法开始：尚未选择导出目录', 'err'); $('#btnBrowse').focus(); return; }
 
+    const confirmed = await confirmStart();
+    if (!confirmed) { log('已取消转换，未提交任务', 'dim'); toast('已取消转换'); return; }
+    if (busy) return;   // 弹框停留期间若已有任务启动，不再重复提交
+
     busy = true;
     $('#btnStart').disabled = true;
     $('#btnStart').textContent = '转换中…';
     $('#btnFolder').disabled = true;
     chosen.forEach(f => f.state = 'wait');
     render();
-    setStatus('处理中', 'busy');
+    setStatus('busy');
     setProgress(0, '准备中');
     log('='.repeat(40), 'dim');
     log('本次转换 ' + chosen.length + ' 个文件', 'dim');
@@ -582,7 +717,7 @@
       $('#btnStart').disabled = false;
       $('#btnStart').textContent = '开始转换';
       $('#btnFolder').disabled = false;
-      setStatus('就绪');
+      setStatus('error', '任务启动失败，无法处理');
       updateStartState();
       toast((r && r.msg) || '启动失败');
       log((r && r.msg) || '启动失败', 'err');
@@ -597,17 +732,17 @@
     updateStartState();
     runQueue = [];
     if (ev.fail === 0) {
-      setStatus('已完成', 'done');
+      setReady();
       setProgress(100, '转换完成：成功 ' + ev.ok + ' 个');
       log('转换完成：成功 ' + ev.ok + ' 个', 'ok');
       toast('转换完成，成功 ' + ev.ok + ' 个');
     } else if (ev.ok === 0) {
-      setStatus('失败', '');
+      setStatus('error', '全部文件转换失败，无法处理');
       $('#taskLabel').textContent = '转换失败';
       log('全部失败，请查看日志', 'err');
       toast('转换失败，请查看日志');
     } else {
-      setStatus('部分完成');
+      setStatus('error', '有 ' + ev.fail + ' 个文件转换失败，请查看日志');
       $('#taskLabel').textContent = '完成：成功 ' + ev.ok + '，失败 ' + ev.fail;
       log('部分完成：成功 ' + ev.ok + '，失败 ' + ev.fail, 'warn');
       toast('部分完成，成功 ' + ev.ok + ' 个');
@@ -645,11 +780,15 @@
   $('#logClear').onclick = () => { $('#log').innerHTML = ''; $('#logCount').textContent = '0 条'; };
 
   window.addEventListener('pywebviewready', () => {
+    engineOk = true;
+    setReady();
     log('解析引擎就绪', 'ok');
     log('请添加天天采配导出的 PDF 清单文件', 'dim');
     updateStartState();
     setInterval(tick, 150);
   });
+  // 引擎迟迟没起来时明确报异常，不要一直显示绿色就绪
+  setTimeout(() => { if (!engineOk) setStatus('error', '解析引擎未就绪，无法处理'); }, 3000);
 </script>
 </body>
 </html>
